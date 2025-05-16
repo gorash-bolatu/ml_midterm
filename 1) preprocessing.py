@@ -1,18 +1,23 @@
-
 import pandas as pd
 
 # Load the dataset
 df = pd.read_csv('[RAW] Mid-TermProject_16-09-27_Data_5percent.csv')
 print(df.info())
+
 print(df.head())
 
 print("Original shape:", df.shape)
-df = df.drop(['eth.addr', 'eth.addr_oui', 'eth.addr_oui_resolved', 'eth.addr_resolved',
-              'eth.dst', 'eth.dst_oui_resolved', 'eth.dst_resolved', 'eth.src', 'eth.src_ig',
-              'eth.src_lg', 'eth.src_oui', 'eth.src_oui_resolved', 'eth.src_resolved', 'ip.addr',
-              'ip.dst', 'ip.dst_host', 'ip.host', 'ip.src', 'ip.src_host', 'arp.dst_hw_mac',
-              'arp.dst_proto_ipv4', 'arp.src_hw_mac', 'arp.src_proto_ipv4'], axis=1)
+# df = df.drop(['eth.addr', 'eth.addr_oui', 'eth.addr_oui_resolved', 'eth.addr_resolved',
+#               'eth.dst', 'eth.dst_oui_resolved', 'eth.dst_resolved', 'eth.src', 'eth.src_ig',
+#               'eth.src_lg', 'eth.src_oui', 'eth.src_oui_resolved', 'eth.src_resolved', 'ip.addr',
+#               'ip.dst', 'ip.dst_host', 'ip.host', 'ip.src', 'ip.src_host', 'arp.dst_hw_mac',
+#               'arp.dst_proto_ipv4', 'arp.src_hw_mac', 'arp.src_proto_ipv4'], axis=1)
 print("Shape after removing unreliable data:", df.shape)
+
+# Drop duplicate rows
+df = df.drop_duplicates(keep="first")
+print("Shape after removing duplicate rows:", df.shape)
+
 print("Empty values in the dataset:")
 print(df.isna().sum().sort_values())
 print("\nTotal:", df.isna().sum().sum())
@@ -57,7 +62,7 @@ categorical_features = categorical_cols.drop(['DeviceName'])
 
 print("Dropping categorical features with too many different values:")
 for i in df[categorical_features]:
-    if (len(df[i].unique()) > 30):
+    if (len(df[i].unique()) > 50):
         print("\t", i, ": " , len(df[i].unique()), sep="")
         categorical_features = categorical_features.drop([str(i)])
 print(df[categorical_features].head())
@@ -70,12 +75,15 @@ encoder.fit(df[categorical_features])
 print("Transforming data...")
 encoded = encoder.transform(df[categorical_features])
 print("Converting into DataFrame...")
-one_hot_df = pd.DataFrame(encoded, columns=encoder.get_feature_names_out(categorical_features))
+df_encoded = pd.DataFrame(encoded, columns=encoder.get_feature_names_out(categorical_features))
 
-print(one_hot_df.head())
+print(df_encoded.head())
+
+df = df.reset_index(drop=True)
+df_encoded = df_encoded.reset_index(drop=True)
 
 print("Concatenating encoded columns with numerical...")
-X = pd.concat([df, one_hot_df], axis=1).drop(categorical_cols, axis=1)
+X = pd.concat([df.drop(columns=categorical_cols), df_encoded], axis=1)
 print("Features (x):")
 print(X.head())
 
@@ -108,7 +116,7 @@ for i, seed in enumerate(seeds):
     
     # Train RandomForest with current seed
     rf = RandomForestClassifier(
-        bootstrap=True, max_samples=0.7,
+        bootstrap=True, max_samples=0.5,
         n_estimators=100, max_depth=10,
         n_jobs=-1, random_state=seed)
     print("\tTraining classifier...")
@@ -138,6 +146,7 @@ for i, seed in enumerate(seeds):
 print("Plotting...")
 plt.tight_layout()
 plt.show()
+
 # Compute mean importances across seeds
 mean_importances = np.mean(all_importances, axis=0)
 
@@ -156,17 +165,20 @@ plt.title('Average top feature importances across 9 seeds')
 plt.tight_layout()
 plt.show()
 
-# Comparing against test data
+# Comparing results against test data
+
 rf = RandomForestClassifier(
     n_estimators=200,
     n_jobs=-1, random_state=1)
 print("Training classifier...")
 rf.fit(X_test, y_test)
+
 print("Calculating results...")
 test_importances = rf.feature_importances_
 test_sorted_idx = np.argsort(test_importances)[::-1][:top_n]
 test_sorted_importances = test_importances[test_sorted_idx]
 test_sorted_feature_names = [X_test.columns[j] for j in test_sorted_idx]
+
 print("Plotting...")
 plt.figure(figsize=(7, 4))
 plt.barh(range(len(test_sorted_feature_names)), test_sorted_importances)
